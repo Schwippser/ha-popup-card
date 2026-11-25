@@ -13,9 +13,16 @@
  *       dashboard: popups       # URL path of the popup dashboard (default: popups)
  *       width: medium           # small | medium | large | full | auto (default: auto = width of the section)
  *       auto_close: 0           # seconds, 0 = off
+ *
+ * The card itself can also open its popup by an external trigger (no tap needed):
+ *   type: custom:ha-popup-card
+ *   section: Cameras
+ *   trigger_entity: binary_sensor.doorbell
+ *   trigger_attribute: battery_level  # optional: watch this attribute instead of the state
+ *   trigger_state: "on"               # optional: only when it changes to this value (empty = every change)
  */
 (() => {
-  const VERSION = "0.2.0";
+  const VERSION = "0.3.0";
   if (window.__haPopupOpener) return;
 
   const TEXT = {
@@ -199,10 +206,12 @@
   // Card "ha-popup-card" with visual editor (Home Assistant default look)
   // ---------------------------------------------------------------------------------------------
   const CARD_TEXT = {
-    en: { name: "Name", secondary: "Secondary text", icon: "Icon", icon_color: "Icon color", dashboard: "Popup dashboard", section: "Section", card: "Card (optional)", popup_title: "Popup title (optional)", hide_title: "Hide title", width: "Width", auto_close: "Close automatically after (seconds, 0 = off)",
+    en: { name: "Name", secondary: "Secondary text", icon: "Icon", icon_color: "Icon color", dashboard: "Popup dashboard", section: "Section", card: "Card (optional)", popup_title: "Popup title (optional)", hide_title: "Hide title", width: "Width", auto_close: "Close automatically after (seconds, 0 = off)", triggerTitle: "External trigger", trigger_entity: "Trigger entity (optional)", trigger_attribute: "Trigger attribute (optional, otherwise the state)", trigger_state: "Trigger value (empty = every change)",
+      triggerHelp: "Opens the popup automatically when the entity (or its attribute) changes to this value. Leave empty to open on every change. Works while a dashboard with this card is open; not when the page loads and not in the card editor preview.",
       sectionHelp: "Heading of a section in the popup dashboard.", cardHelp: "Opens only this card of the section. Leave empty to open the whole section. Position (1 = first card), name, title, heading or entity.", popup_titleHelp: "Overrides the section heading, or names the popup when only one card is shown.", hide_titleHelp: "Hides the title of the popup (useful for a single card). A popup title entered above is still shown.", hintTitle: "Open the popup from other cards", hintText: "Any other card can open this popup with the action \"Fire DOM event\" (tap_action / hold_action). Add this to the YAML of the card:", dashboardHelp: "URL path of the dashboard that holds the popups.",
       auto: "Automatic (width of the section)", small: "Small", medium: "Medium", large: "Large", full: "Full width", defaultDashboard: "Overview (default dashboard)", hint: "Choose a section in the editor" },
-    de: { name: "Name", secondary: "Zusatztext", icon: "Symbol", icon_color: "Symbolfarbe", dashboard: "Popup-Dashboard", section: "Abschnitt", card: "Karte (optional)", popup_title: "Name des Popups (optional)", hide_title: "Titel ausblenden", width: "Breite", auto_close: "Automatisch schließen nach (Sekunden, 0 = aus)",
+    de: { name: "Name", secondary: "Zusatztext", icon: "Symbol", icon_color: "Symbolfarbe", dashboard: "Popup-Dashboard", section: "Abschnitt", card: "Karte (optional)", popup_title: "Name des Popups (optional)", hide_title: "Titel ausblenden", width: "Breite", auto_close: "Automatisch schließen nach (Sekunden, 0 = aus)", triggerTitle: "Externer Auslöser", trigger_entity: "Auslöser-Entität (optional)", trigger_attribute: "Auslöser-Attribut (optional, sonst der Zustand)", trigger_state: "Auslöser-Wert (leer = jede Änderung)",
+      triggerHelp: "Öffnet das Popup automatisch, wenn die Entität (oder ihr Attribut) auf diesen Wert wechselt. Leer lassen, um bei jeder Änderung zu öffnen. Funktioniert, solange ein Dashboard mit dieser Karte geöffnet ist; nicht beim Laden der Seite und nicht in der Vorschau des Karten-Editors.",
       sectionHelp: "Überschrift eines Abschnitts im Popup-Dashboard.", cardHelp: "Öffnet nur diese Karte des Abschnitts. Leer lassen, um den ganzen Abschnitt zu öffnen. Position (1 = erste Karte), Name, Titel, Überschrift oder Entität.", popup_titleHelp: "Überschreibt den Abschnitts-Titel bzw. gibt dem Popup einen Namen, wenn nur eine Karte angezeigt wird.", hide_titleHelp: "Blendet den Titel des Popups aus (sinnvoll bei einer einzelnen Karte). Ein oben eingetragener Popup-Name wird trotzdem angezeigt.", hintTitle: "Popup aus anderen Karten öffnen", hintText: "Jede andere Karte kann dieses Popup mit der Aktion „DOM-Ereignis auslösen“ (tap_action / hold_action) öffnen. Im YAML der Karte eintragen:", dashboardHelp: "URL-Pfad des Dashboards, das die Popups enthält.",
       auto: "Automatisch (Breite des Abschnitts)", small: "Klein", medium: "Mittel", large: "Groß", full: "Volle Breite", defaultDashboard: "Übersicht (Standard-Dashboard)", hint: "Abschnitt im Editor wählen" }
   };
@@ -221,9 +230,37 @@
     setConfig(config) {
       if (!config) throw new Error("Invalid configuration");
       this._config = { ...config };
+      this._trigReady = false;
       this._render();
     }
-    set hass(hass) { this._hass = hass; }
+    set hass(hass) {
+      this._hass = hass;
+      this._trigger(hass);
+    }
+    // External trigger: opens the popup when the trigger entity (or one of its attributes) changes (not on page load, not in the editor preview)
+    _trigger(hass) {
+      const c = this._config, id = c?.trigger_entity;
+      if (!id || !c.section) { this._trigReady = false; return; }
+      const object = hass?.states?.[id], attr = String(c.trigger_attribute ?? "").trim();
+      const raw = !object ? undefined : attr ? object.attributes?.[attr] : object.state;
+      const now = raw === undefined || raw === null ? undefined : typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+      const prev = this._trigPrev;
+      this._trigPrev = now;
+      if (!this._trigReady) { this._trigReady = true; return; }
+      if (now === undefined || now === prev) return;
+      const want = String(c.trigger_state ?? "").trim().toLowerCase();
+      if (want && now.toLowerCase() !== want) return;
+      if (this._inPreview()) return;
+      this._open();
+    }
+    _inPreview() {
+      let node = this;
+      for (let i = 0; i < 30 && node; i++) {
+        if (["hui-card-preview", "hui-dialog-edit-card", "hui-card-element-editor"].includes(node.localName)) return true;
+        node = node.parentElement || node.getRootNode?.()?.host;
+      }
+      return false;
+    }
     getCardSize() { return 1; }
     getGridOptions() { return { columns: 6, rows: 1, min_columns: 3, min_rows: 1 }; }
     connectedCallback() { if (this._config) this._render(); }
@@ -287,7 +324,7 @@
       if (this._form) return;
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (item) => ct(this._hass, item.name) || item.name;
-      this._form.computeHelper = (item) => item.name === "section" ? ct(this._hass, "sectionHelp") : item.name === "card" ? ct(this._hass, "cardHelp") : item.name === "popup_title" ? ct(this._hass, "popup_titleHelp") : item.name === "hide_title" ? ct(this._hass, "hide_titleHelp") : item.name === "dashboard" ? ct(this._hass, "dashboardHelp") : "";
+      this._form.computeHelper = (item) => item.name === "section" ? ct(this._hass, "sectionHelp") : item.name === "card" ? ct(this._hass, "cardHelp") : item.name === "popup_title" ? ct(this._hass, "popup_titleHelp") : item.name === "hide_title" ? ct(this._hass, "hide_titleHelp") : item.name === "dashboard" ? ct(this._hass, "dashboardHelp") : item.name === "trigger_state" ? ct(this._hass, "triggerHelp") : "";
       this._form.addEventListener("value-changed", (event) => this._changed(event));
       this._hint = document.createElement("div");
       this._hint.style.cssText = "margin-top:16px;font-size:14px;color:var(--secondary-text-color);";
@@ -342,7 +379,12 @@
         { name: "popup_title", selector: { text: {} } },
         { name: "hide_title", selector: { boolean: {} } },
         { name: "width", selector: { select: { mode: "dropdown", options: ["auto", "small", "medium", "large", "full"].map((value) => ({ value, label: ct(h, value) })) } } },
-        { name: "auto_close", selector: { number: { min: 0, max: 600, step: 1, mode: "box", unit_of_measurement: "s" } } }
+        { name: "auto_close", selector: { number: { min: 0, max: 600, step: 1, mode: "box", unit_of_measurement: "s" } } },
+        { type: "expandable", name: "", title: ct(h, "triggerTitle"), flatten: true, expanded: !!this._config.trigger_entity, schema: [
+          { name: "trigger_entity", selector: { entity: {} } },
+          { name: "trigger_attribute", selector: { attribute: {} }, context: { filter_entity: "trigger_entity" } },
+          { name: "trigger_state", selector: { text: {} } }
+        ] }
       ];
     }
     _refresh() {
@@ -377,6 +419,8 @@
       if (!config.hide_title) delete config.hide_title;
       if (config.dashboard === "popups") delete config.dashboard;
       if ((this._config.section || "") !== (config.section || "")) delete config.card;
+      if ((this._config.trigger_entity || "") !== (config.trigger_entity || "")) delete config.trigger_attribute;
+      if (!config.trigger_entity) { delete config.trigger_attribute; delete config.trigger_state; }
       const dashboardChanged = (this._config.dashboard || "popups") !== (config.dashboard || "popups");
       this._config = config;
       if (dashboardChanged) this._loadSections();
