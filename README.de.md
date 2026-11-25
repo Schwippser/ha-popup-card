@@ -83,6 +83,7 @@ Regeln:
 | **Titel ausblenden** | Blendet den Titel aus (sinnvoll bei einer einzelnen Karte). Ein oben eingetragener Popup-Name wird trotzdem angezeigt. |
 | **Breite** | *Automatisch* (Breite des Abschnitts), *Klein* (360 px), *Mittel* (560 px), *Groß* (860 px) oder *Volle Breite* (90 % des Fensters). |
 | **Automatisch schließen** | Sekunden, bis das Popup von selbst schließt, `0` = aus. |
+| **Externer Auslöser** (Bereich) | Öffnet das Popup ohne Antippen, siehe [Automatisch öffnen](#automatisch-öffnen-externer-auslöser). Felder: **Auslöser-Entität**, **Auslöser-Attribut** (optional) und **Auslöser-Wert**. |
 
 Bleibt eine Auswahlliste leer (z. B. weil das Dashboard mit deinen Benutzerrechten nicht gelesen werden kann), wird das Feld zum normalen Textfeld: Dashboard-Pfad und Abschnittsname dann von Hand eintragen.
 
@@ -99,6 +100,40 @@ dashboard: popups       # optional, Standard: popups
 width: medium           # optional: auto | small | medium | large | full
 auto_close: 0           # optional, Sekunden
 ```
+
+## Automatisch öffnen (externer Auslöser)
+
+Die Karte kann ihr Popup selbst öffnen, wenn sich eine andere Entität ändert, zum Beispiel Türklingel, Bewegungsmelder oder Alarm. Im Editor den Bereich **Externer Auslöser** öffnen:
+
+| Feld | Bedeutung |
+|---|---|
+| **Auslöser-Entität** | Die Entität, die beobachtet wird. |
+| **Auslöser-Attribut** (optional) | Beobachtet dieses Attribut der Entität statt ihres Zustands (die Auswahl listet die Attribute der Entität). |
+| **Auslöser-Wert** | Das Popup öffnet sich, wenn der Zustand (bzw. das Attribut) **auf diesen Wert wechselt**. Leer = jede Änderung. Groß-/Kleinschreibung egal. |
+
+```yaml
+type: custom:ha-popup-card
+name: Haustür
+section: Kameras
+card: camera.haustuer
+trigger_entity: binary_sensor.tuerklingel
+trigger_state: "on"
+```
+
+Mit Attribut:
+
+```yaml
+trigger_entity: climate.wohnzimmer
+trigger_attribute: hvac_action
+trigger_state: heating
+```
+
+Gut zu wissen:
+
+- Reagiert wird auf eine **Änderung**, nicht auf den aktuellen Wert: Beim Laden der Seite passiert nichts, und ein Wert, der `on` bleibt, öffnet das Popup nicht erneut.
+- Es funktioniert, **solange ein Dashboard mit dieser Karte geöffnet ist** (in jedem Browser oder Tablet, das es anzeigt). Die Karte muss auf einem Dashboard liegen, das gerade angezeigt wird. Typisch ist ein Wandtablet, auf dem das Dashboard immer offen ist.
+- Nicht in der Editor-Vorschau, damit beim Bearbeiten nichts aufspringt.
+- Das Popup öffnet sich genau so, als hättest du die Karte angetippt, einschließlich der Einstellungen *Karte*, *Name des Popups*, *Breite* und *Automatisch schließen*.
 
 ## Auslösen aus anderen Karten (versteckter Zusatz)
 

@@ -1,0 +1,34 @@
+# Testkarten (Test-HA)
+# 1) Eigene Karte (mit visuellem Editor):
+type: custom:ha-popup-card
+name: Popup testen
+icon: mdi:window-restore
+section: Kamera
+width: medium
+---
+# 2) Fremde Karte mit fire-dom-event:
+type: button
+name: Popup testen (Button)
+icon: mdi:window-open-variant
+tap_action:
+  action: fire-dom-event
+  ha_popup:
+    section: Kamera
+    dashboard: popups
+    width: medium
+---
+# 3) Eigene Karte mit externem Ausloeser (Zustand):
+type: custom:ha-popup-card
+name: Popup per Ausloeser
+icon: mdi:bell-ring
+section: Kamera
+trigger_entity: input_boolean.test_popup
+trigger_state: "on"
+---
+# 4) Mit Attribut:
+type: custom:ha-popup-card
+name: Popup per Attribut
+section: Kamera
+trigger_entity: climate.wohnzimmer
+trigger_attribute: hvac_action
+trigger_state: heating

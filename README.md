@@ -83,6 +83,7 @@ Rules:
 | **Hide title** | Hides the title (useful for a single card). A popup title entered above is still shown. |
 | **Width** | *Automatic* (width of the section), *Small* (360 px), *Medium* (560 px), *Large* (860 px) or *Full width* (90 % of the window). |
 | **Close automatically** | Seconds until the popup closes by itself, `0` = off. |
+| **External trigger** (section) | Opens the popup without a tap, see [Open automatically](#open-automatically-external-trigger). Fields: **Trigger entity**, **Trigger attribute** (optional) and **Trigger value**. |
 
 If a drop-down stays empty (for example because the dashboard cannot be read with your user rights), the field turns into a normal text field: type the dashboard path and the section name by hand.
 
@@ -99,6 +100,40 @@ dashboard: popups       # optional, default: popups
 width: medium           # optional: auto | small | medium | large | full
 auto_close: 0           # optional, seconds
 ```
+
+## Open automatically (external trigger)
+
+The card can open its popup by itself when another entity changes, for example a doorbell, a motion sensor or an alarm. In the editor open the section **External trigger**:
+
+| Field | Meaning |
+|---|---|
+| **Trigger entity** | The entity to watch. |
+| **Trigger attribute** (optional) | Watch this attribute of the entity instead of its state (the drop-down lists the attributes of the entity). |
+| **Trigger value** | The popup opens when the state (or the attribute) **changes to** this value. Empty = every change. Not case-sensitive. |
+
+```yaml
+type: custom:ha-popup-card
+name: Front door
+section: Cameras
+card: camera.front_door
+trigger_entity: binary_sensor.doorbell
+trigger_state: "on"
+```
+
+With an attribute:
+
+```yaml
+trigger_entity: climate.living_room
+trigger_attribute: hvac_action
+trigger_state: heating
+```
+
+Good to know:
+
+- It reacts to a **change**, not to the current value: nothing happens when the page loads, and a value that stays `on` does not open the popup again.
+- It works **while a dashboard with this card is open** (in any browser or tablet that shows it). The card has to be on a dashboard that is currently displayed. A wall tablet with the dashboard always open is the typical case.
+- Not in the editor preview, so it does not pop up while you edit the card.
+- The popup opens exactly as if you had tapped the card, including the settings *Card*, *Popup title*, *Width* and *Close automatically*.
 
 ## Trigger from other cards (hidden extra)
 
