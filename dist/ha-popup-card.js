@@ -22,7 +22,7 @@
  *   trigger_state: "on"               # optional: only when it changes to this value (empty = every change)
  */
 (() => {
-  const VERSION = "0.3.0";
+  const VERSION = "0.3.3";
   if (window.__haPopupOpener) return;
 
   const TEXT = {
@@ -36,11 +36,14 @@
   const t = (key) => (TEXT[String(getHass()?.language ?? "en").slice(0, 2)] ?? TEXT.en)[key];
 
   const STYLE = `
-    dialog.ha-popup-opener { box-sizing: border-box; width: min(520px, 90vw); max-width: 90vw; max-height: 85vh; margin: auto; padding: 0; border: none;
-      border-radius: var(--ha-card-border-radius, 12px); background: var(--card-background-color, #fff); color: var(--primary-text-color, #000);
-      box-shadow: var(--ha-card-box-shadow, 0 8px 32px rgba(0,0,0,.4)); overflow: hidden; }
+    dialog.ha-popup-opener { box-sizing: border-box; width: min(520px, 90vw); max-width: 90vw; max-height: 85vh; margin: auto; padding: 0;
+      /* Same theme variables as a Home Assistant card, so the popup follows the selected theme (background, border, corners, shadow, blur, font) */
+      border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, transparent));
+      border-radius: var(--ha-card-border-radius, 12px); background: var(--ha-card-background, var(--card-background-color, #fff)); color: var(--primary-text-color, #000);
+      box-shadow: var(--ha-card-box-shadow, 0 8px 32px rgba(0,0,0,.4)); -webkit-backdrop-filter: var(--ha-card-backdrop-filter, none); backdrop-filter: var(--ha-card-backdrop-filter, none);
+      font-family: var(--ha-font-family-body, var(--primary-font-family, inherit)); overflow: hidden; }
     dialog.ha-popup-opener[open] { display: flex; flex-direction: column; }
-    dialog.ha-popup-opener::backdrop { background: rgba(0, 0, 0, .55); }
+    dialog.ha-popup-opener::backdrop { background: var(--mdc-dialog-scrim-color, rgba(0, 0, 0, .55)); }
     .ha-popup-opener-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 20px; flex: none; }
     .ha-popup-opener-title { flex: 1; min-width: 0; font-size: 20px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ha-popup-opener-close { all: unset; cursor: pointer; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--secondary-text-color, #727272); }
@@ -59,12 +62,54 @@
 
   let current = null;
 
+  // The popup is a child of <body>, so it only sees the global theme. Theme values that only apply to the dashboard view or the card
+  // (view theme, card theme) and the look of the card itself (glass, gradient, blur, corners) are taken over from the opening element.
+  const themeVariableNames = () => {
+    const names = new Set();
+    const add = (object) => Object.keys(object || {}).forEach((key) => { if (key !== "modes") names.add(key.startsWith("--") ? key : `--${key}`); });
+    for (const theme of Object.values(getHass()?.themes?.themes ?? {})) { add(theme); add(theme?.modes?.light); add(theme?.modes?.dark); }
+    return names;
+  };
+  const applyTheme = (dialog, source) => {
+    try {
+      if (!source || !source.getRootNode) return;
+      // 1) theme variables that Home Assistant sets directly on elements above the source (view or card theme), outermost first
+      const chain = [];
+      for (let node = source, i = 0; node && i < 80; i++) { chain.push(node); node = node.assignedSlot || node.parentElement || node.getRootNode?.()?.host; }
+      const wanted = themeVariableNames();
+      for (const element of chain.reverse()) {
+        const style = element.style;
+        if (!style) continue;
+        for (let i = 0; i < style.length; i++) {
+          const name = style[i];
+          if (name.startsWith("--") && (wanted.has(name) || name.startsWith("--ha-card-"))) dialog.style.setProperty(name, style.getPropertyValue(name));
+        }
+      }
+      // 2) look of a card in the same place (an unhovered probe card), so card styles of the theme apply as well
+      const scope = source.getRootNode?.();
+      const host = scope instanceof ShadowRoot ? scope : document.body;
+      const probe = document.createElement("ha-card");
+      probe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;width:0;height:0;";
+      host.append(probe);
+      const css = getComputedStyle(probe);
+      const color = css.backgroundColor, image = css.backgroundImage;
+      const visible = (image && image !== "none") || (color && !/^(transparent|rgba\(\s*0,\s*0,\s*0,\s*0\s*\))$/i.test(color));
+      if (visible) { dialog.style.backgroundColor = color; dialog.style.backgroundImage = image; }
+      if (parseFloat(css.borderTopWidth) > 0 && css.borderTopStyle !== "none") { dialog.style.borderWidth = css.borderTopWidth; dialog.style.borderStyle = css.borderTopStyle; dialog.style.borderColor = css.borderTopColor; }
+      if (css.borderTopLeftRadius) dialog.style.borderRadius = css.borderTopLeftRadius;
+      if (css.boxShadow && css.boxShadow !== "none") dialog.style.boxShadow = css.boxShadow;
+      const blur = css.backdropFilter || css.webkitBackdropFilter;
+      if (blur && blur !== "none") { dialog.style.backdropFilter = blur; dialog.style.webkitBackdropFilter = blur; }
+      probe.remove();
+    } catch { /* the popup still works with the global theme */ }
+  };
+
   const closeCurrent = () => {
     if (!current) return;
     try { current.dialog.close(); } catch { current.finish(); }
   };
 
-  async function open(cfg) {
+  async function open(cfg, source) {
     const hass = getHass();
     if (!hass) return;
     closeCurrent();
@@ -80,6 +125,7 @@
     const dialog = document.createElement("dialog");
     dialog.className = "ha-popup-opener";
     dialog.style.width = fixed ? `min(${fixed}px,90vw)` : mode === "full" ? "90vw" : "min(520px,90vw)";
+    applyTheme(dialog, source);
     const head = document.createElement("div");
     head.className = "ha-popup-opener-head";
     const title = document.createElement("span");
@@ -94,6 +140,8 @@
     body.className = "ha-popup-opener-body";
     dialog.append(head, body);
 
+    // width of the theme border (left + right), part of the dialog width (border-box)
+    const edge = () => Math.round((parseFloat(getComputedStyle(dialog).borderLeftWidth) || 0) + (parseFloat(getComputedStyle(dialog).borderRightWidth) || 0));
     const popup = current = { dialog, cards: [], timer: 0, hassTimer: 0, finish: null };
     popup.finish = () => {
       clearTimeout(popup.timer); clearInterval(popup.hassTimer);
@@ -149,7 +197,7 @@
         const px = (variable, fallback) => parseFloat(style.getPropertyValue(variable)) || fallback;
         const column = px("--ha-view-sections-column-max-width", 500), gap = px("--ha-view-sections-column-gap", 32);
         sectionWidth = Math.round(found.span * column + (found.span - 1) * gap);
-        dialog.style.width = `min(${sectionWidth + 24}px,90vw)`;
+        dialog.style.width = `min(${sectionWidth + 24 + edge()}px,90vw)`;
       }
       if (pick) {
         const wanted = norm(pick);
@@ -184,7 +232,7 @@
           const rows = Number(cardConfig.grid_options?.rows ?? cardConfig.layout_options?.grid_rows);
           if (rows > 0) element.style.minHeight = `${rows * 56 + (rows - 1) * 8}px`;
         } else if (pick && sectionWidth) {
-          dialog.style.width = `min(${Math.max(320, Math.round(sectionWidth * columns / total)) + 24}px,90vw)`;
+          dialog.style.width = `min(${Math.max(320, Math.round(sectionWidth * columns / total)) + 24 + edge()}px,90vw)`;
         }
         body.append(element);
       }
@@ -267,7 +315,7 @@
     _open() {
       const c = this._config;
       if (!c?.section) return;
-      open({ section: c.section, card: c.card, popup_title: c.popup_title, hide_title: c.hide_title, dashboard: c.dashboard, width: c.width, auto_close: c.auto_close });
+      open({ section: c.section, card: c.card, popup_title: c.popup_title, hide_title: c.hide_title, dashboard: c.dashboard, width: c.width, auto_close: c.auto_close }, this);
     }
     _render() {
       const c = this._config;
@@ -280,7 +328,7 @@
           :host { display: block; }
           ha-card { height: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 12px; min-height: 56px; cursor: pointer;
             -webkit-tap-highlight-color: transparent; transition: background-color .15s; }
-          ha-card:hover { background: color-mix(in srgb, var(--primary-text-color, #000) 4%, var(--card-background-color, #fff)); }
+          ha-card:hover { box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--primary-text-color, #000) 5%, transparent), var(--ha-card-box-shadow, none); }
           ha-card:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
           .icon { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: ${color};
             background: color-mix(in srgb, ${color} 20%, transparent); }
@@ -439,7 +487,7 @@
   window.addEventListener("ll-custom", (event) => {
     const cfg = event.detail?.ha_popup;
     if (!cfg) return;
-    open(typeof cfg === "string" ? { section: cfg } : cfg);
+    open(typeof cfg === "string" ? { section: cfg } : cfg, event.composedPath?.()[0]);
   });
 
   window.__haPopupOpener = { version: VERSION, open, close: closeCurrent };

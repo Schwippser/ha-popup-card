@@ -158,6 +158,7 @@ Short form: `ha_popup: Cameras`. From JavaScript: `window.__haPopupOpener.open({
 ## Notes
 
 - Opening another popup closes the current one.
+- The popup window follows the selected Home Assistant theme: it takes over the theme values of the dashboard view or card that opens it (view theme, card theme) and the look of a card there (background or gradient, border, corner radius, shadow, blur), plus the theme font.
 - The popup is a modal `<dialog>`. Windows that other cards add directly to `<body>` (for example the event details of the LLM Vision card) can end up behind it.
 - Cards in the popup are updated live while it is open.
 

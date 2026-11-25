@@ -158,6 +158,7 @@ Kurzform: `ha_popup: Kameras`. Aus JavaScript: `window.__haPopupOpener.open({ se
 ## Hinweise
 
 - Ein weiteres Popup zu öffnen schließt das aktuelle.
+- Das Popup-Fenster folgt dem gewählten Home-Assistant-Theme: Es übernimmt die Theme-Werte der Ansicht oder Karte, die es öffnet (Ansichts-Theme, Karten-Theme), und das Aussehen einer Karte an dieser Stelle (Hintergrund bzw. Verlauf, Rahmen, Eckenradius, Schatten, Unschärfe) sowie die Theme-Schrift.
 - Das Popup ist ein modaler `<dialog>`. Fenster, die andere Karten direkt an `<body>` hängen (z. B. die Ereignisdetails der LLM-Vision-Karte), können dahinter landen.
 - Karten im Popup werden live aktualisiert, solange es offen ist.
 
