@@ -22,7 +22,7 @@
  *   trigger_state: "on"               # optional: only when it changes to this value (empty = every change)
  */
 (() => {
-  const VERSION = "0.3.3";
+  const VERSION = "0.3.5";
   if (window.__haPopupOpener) return;
 
   const TEXT = {
@@ -52,12 +52,16 @@
     .ha-popup-opener-body > * { flex: none; }
     .ha-popup-opener-note { opacity: .7; font-size: 14px; padding: 8px; }
   `;
-  const ensureStyle = () => {
-    if (document.getElementById("ha-popup-opener-style")) return;
+  // The popup lives inside <home-assistant> (its shadow root), not directly in <body>: newer Home Assistant components (e.g. the camera stream)
+  // get their connection (callWS) through a context that only reaches elements below <home-assistant>.
+  const popupRoot = () => homeAssistant()?.shadowRoot ?? document.body;
+  const ensureStyle = (root) => {
+    const inRoot = root instanceof ShadowRoot;
+    if ((inRoot ? root : document).getElementById("ha-popup-opener-style")) return;
     const style = document.createElement("style");
     style.id = "ha-popup-opener-style";
     style.textContent = STYLE;
-    document.head.append(style);
+    (inRoot ? root : document.head).append(style);
   };
 
   let current = null;
@@ -112,8 +116,12 @@
   async function open(cfg, source) {
     const hass = getHass();
     if (!hass) return;
+    // Same popup already open (e.g. a card inside it fires the action again): keep it, do not rebuild its cards
+    const key = JSON.stringify([cfg.dashboard || "popups", cfg.section ?? cfg.name ?? "", cfg.card ?? ""]);
+    if (current && current.key === key && current.dialog.isConnected) return;
     closeCurrent();
-    ensureStyle();
+    const root = popupRoot();
+    ensureStyle(root);
 
     const mode = norm(cfg.width) || "auto";
     const fixed = WIDTHS[mode];
@@ -142,7 +150,7 @@
 
     // width of the theme border (left + right), part of the dialog width (border-box)
     const edge = () => Math.round((parseFloat(getComputedStyle(dialog).borderLeftWidth) || 0) + (parseFloat(getComputedStyle(dialog).borderRightWidth) || 0));
-    const popup = current = { dialog, cards: [], timer: 0, hassTimer: 0, finish: null };
+    const popup = current = { dialog, cards: [], timer: 0, hassTimer: 0, finish: null, key };
     popup.finish = () => {
       clearTimeout(popup.timer); clearInterval(popup.hassTimer);
       if (current === popup) current = null;
@@ -152,7 +160,7 @@
     close.addEventListener("click", () => dialog.close());
     dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
     dialog.addEventListener("close", popup.finish);
-    document.body.append(dialog);
+    root.append(dialog);
     dialog.showModal();
 
     const autoClose = Number(cfg.auto_close);
