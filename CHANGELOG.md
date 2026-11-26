@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5 (beta)
+
+- Fix: the popup is now placed inside `<home-assistant>` instead of `<body>`. Cards that need the Home Assistant connection through the frontend context (for example camera streams, as in the Reolink App Card) showed a black picture (`Cannot read properties of undefined (reading 'callWS')`) in the popup.
+
+## 0.3.4 (beta)
+
+- Fix: if the same popup is already open and the action fires again (for example from a card inside the popup), the popup is no longer rebuilt, so its cards keep their state.
+
 ## 0.3.3 (beta)
 
 - Fix: the button no longer loses the theme background (gradient, glass) when the mouse is over it. The hover effect is now a light overlay instead of a flat color.
