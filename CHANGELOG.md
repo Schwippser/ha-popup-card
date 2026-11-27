@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.8 (beta)
+
+- Fix: visibility conditions of sections that use the key `entity_id` (how newer Home Assistant versions store state and numeric-state conditions) were evaluated as "entity not available", so such a section was always hidden in the popup. Both `entity_id` and the older `entity` are now supported.
+
+## 0.3.7 (beta)
+
+- Fix: when a popup opens a **whole dashboard page** (`section:` set to the path or title of a view, for example `energie`), the visibility of the sections inside that page is now respected too. Before, all sections of the page were shown, including those hidden for the current user (0.3.6 only fixed opening a single section by its heading). Sections that are not visible are left out; if none is visible, the short note is shown. An open popup closes when the visibility of one of its sections changes.
+
 ## 0.3.6 (beta)
 
 - Fix: the visibility of a **section** in the popup dashboard (for example "show only to certain users") is now respected. Before, the popup showed all cards of the section even for users the section was hidden from; only the visibility of single cards worked. Supported conditions: user, state, numeric state, screen, and, or, not. If the section is not visible for the current user, the popup shows a short note instead of the cards, and an open popup closes when the conditions stop being met.
