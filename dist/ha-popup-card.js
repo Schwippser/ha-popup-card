@@ -22,7 +22,7 @@
  *   trigger_state: "on"               # optional: only when it changes to this value (empty = every change)
  */
 (() => {
-  const VERSION = "0.3.6";
+  const VERSION = "0.3.8";
   if (window.__haPopupOpener) return;
 
   const TEXT = {
@@ -40,12 +40,14 @@
   const asList = (value) => Array.isArray(value) ? value : [value];
   const conditionMet = (condition, hass) => {
     if (!condition || typeof condition !== "object") return true;
-    const type = condition.condition ?? (condition.entity ? (condition.above !== undefined || condition.below !== undefined ? "numeric_state" : "state") : "");
+    // Home Assistant stores the entity as "entity_id" (newer versions) or "entity" (older ones)
+    const entityOf = (c) => { const e = c.entity_id ?? c.entity; return Array.isArray(e) ? e[0] : e; };
+    const type = condition.condition ?? (entityOf(condition) ? (condition.above !== undefined || condition.below !== undefined ? "numeric_state" : "state") : "");
     const stateOf = (entityId) => hass?.states?.[entityId]?.state;
     switch (type) {
       case "user": return !Array.isArray(condition.users) || condition.users.includes(hass?.user?.id);
       case "state": {
-        const value = stateOf(condition.entity) ?? "unavailable";
+        const value = stateOf(entityOf(condition)) ?? "unavailable";
         const ref = (x) => (typeof x === "string" && hass?.states?.[x]) ? hass.states[x].state : x;
         if (condition.state !== undefined) return asList(condition.state).map(ref).map(String).includes(String(value));
         if (condition.state_not !== undefined) return !asList(condition.state_not).map(ref).map(String).includes(String(value));
@@ -53,7 +55,7 @@
       }
       case "numeric_state": {
         const num = (x) => typeof x === "string" && hass?.states?.[x] ? Number(hass.states[x].state) : Number(x);
-        const value = Number(stateOf(condition.entity));
+        const value = Number(stateOf(entityOf(condition)));
         if (Number.isNaN(value)) return false;
         if (condition.above !== undefined && condition.above !== null && !(value > num(condition.above))) return false;
         if (condition.below !== undefined && condition.below !== null && !(value < num(condition.below))) return false;
@@ -224,10 +226,18 @@
       // Fallback: a view with a matching path or title
       if (!found) {
         const view = (config.views ?? []).find((v) => norm(v.path) === norm(name) || norm(v.title) === norm(name));
-        if (view) found = { title: view.title ?? name, cards: [...(view.cards ?? []), ...(view.sections ?? []).flatMap((s) => s.cards ?? [])] };
+        if (view) found = { title: view.title ?? name, parts: [{ cards: view.cards ?? [] }, ...(view.sections ?? []).map((s) => ({ visibility: s.visibility, cards: s.cards ?? [] }))] };
       }
       if (current !== popup) return;
       if (!found) { note(t("notFound") + " " + name); return; }
+      // Whole view (path/title): keep only the sections whose visibility conditions are met
+      const visibleKey = (h) => found.parts ? found.parts.map((part) => conditionsMet(part.visibility, h) ? "1" : "0").join("") : "";
+      if (found.parts) {
+        const h = getHass() ?? hass;
+        found.cards = found.parts.filter((part) => conditionsMet(part.visibility, h)).flatMap((part) => part.cards);
+        if (!found.cards.length && found.parts.some((part) => part.cards.length && !conditionsMet(part.visibility, h))) { title.textContent = ""; note(t("notVisible")); return; }
+      }
+      const initialKey = visibleKey(getHass() ?? hass);
       // Section visibility (for example only for certain users): not shown when the conditions are not met
       if (!conditionsMet(found.visibility, getHass() ?? hass)) { title.textContent = ""; note(t("notVisible")); return; }
       const customTitle = String(cfg.popup_title ?? "").trim();
@@ -286,7 +296,7 @@
         const next = getHass();
         if (!next || next === lastHass) return;
         lastHass = next;
-        if (!conditionsMet(found.visibility, next)) { try { dialog.close(); } catch { popup.finish(); } return; }
+        if (!conditionsMet(found.visibility, next) || visibleKey(next) !== initialKey) { try { dialog.close(); } catch { popup.finish(); } return; }
         popup.cards.forEach((card) => { card.hass = next; });
       }, 500);
     } catch (error) {
