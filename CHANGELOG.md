@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6 (beta)
+
+- Fix: the visibility of a **section** in the popup dashboard (for example "show only to certain users") is now respected. Before, the popup showed all cards of the section even for users the section was hidden from; only the visibility of single cards worked. Supported conditions: user, state, numeric state, screen, and, or, not. If the section is not visible for the current user, the popup shows a short note instead of the cards, and an open popup closes when the conditions stop being met.
+
 ## 0.3.5 (beta)
 
 - Fix: the popup is now placed inside `<home-assistant>` instead of `<body>`. Cards that need the Home Assistant connection through the frontend context (for example camera streams, as in the Reolink App Card) showed a black picture (`Cannot read properties of undefined (reading 'callWS')`) in the popup.
