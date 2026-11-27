@@ -22,18 +22,51 @@
  *   trigger_state: "on"               # optional: only when it changes to this value (empty = every change)
  */
 (() => {
-  const VERSION = "0.3.5";
+  const VERSION = "0.3.6";
   if (window.__haPopupOpener) return;
 
   const TEXT = {
-    en: { loading: "Loading…", notFound: "Popup not found:", cardNotFound: "Card not found in the popup:", noCards: "This popup has no cards.", noHelpers: "Cards could not be created.", failed: "Popup dashboard could not be loaded:", close: "Close" },
-    de: { loading: "Lädt…", notFound: "Popup nicht gefunden:", cardNotFound: "Karte im Popup nicht gefunden:", noCards: "Dieses Popup enthält keine Karten.", noHelpers: "Karten konnten nicht erstellt werden.", failed: "Popup-Dashboard konnte nicht geladen werden:", close: "Schließen" }
+    en: { loading: "Loading…", notFound: "Popup not found:", cardNotFound: "Card not found in the popup:", noCards: "This popup has no cards.", notVisible: "This popup is not available for you.", noHelpers: "Cards could not be created.", failed: "Popup dashboard could not be loaded:", close: "Close" },
+    de: { loading: "Lädt…", notFound: "Popup nicht gefunden:", cardNotFound: "Karte im Popup nicht gefunden:", noCards: "Dieses Popup enthält keine Karten.", notVisible: "Dieses Popup ist für dich nicht verfügbar.", noHelpers: "Karten konnten nicht erstellt werden.", failed: "Popup-Dashboard konnte nicht geladen werden:", close: "Schließen" }
   };
   const WIDTHS = { small: 360, medium: 560, large: 860 };
   const norm = (value) => String(value ?? "").trim().toLowerCase();
   const homeAssistant = () => document.querySelector("home-assistant");
   const getHass = () => homeAssistant()?.hass;
   const t = (key) => (TEXT[String(getHass()?.language ?? "en").slice(0, 2)] ?? TEXT.en)[key];
+
+  // Visibility conditions of a section ("visibility" in the sections view), evaluated like Home Assistant does for a card.
+  // Supported: user, state, numeric_state, screen, and, or, not. Unknown types (e.g. time, location) do not hide the section.
+  const asList = (value) => Array.isArray(value) ? value : [value];
+  const conditionMet = (condition, hass) => {
+    if (!condition || typeof condition !== "object") return true;
+    const type = condition.condition ?? (condition.entity ? (condition.above !== undefined || condition.below !== undefined ? "numeric_state" : "state") : "");
+    const stateOf = (entityId) => hass?.states?.[entityId]?.state;
+    switch (type) {
+      case "user": return !Array.isArray(condition.users) || condition.users.includes(hass?.user?.id);
+      case "state": {
+        const value = stateOf(condition.entity) ?? "unavailable";
+        const ref = (x) => (typeof x === "string" && hass?.states?.[x]) ? hass.states[x].state : x;
+        if (condition.state !== undefined) return asList(condition.state).map(ref).map(String).includes(String(value));
+        if (condition.state_not !== undefined) return !asList(condition.state_not).map(ref).map(String).includes(String(value));
+        return true;
+      }
+      case "numeric_state": {
+        const num = (x) => typeof x === "string" && hass?.states?.[x] ? Number(hass.states[x].state) : Number(x);
+        const value = Number(stateOf(condition.entity));
+        if (Number.isNaN(value)) return false;
+        if (condition.above !== undefined && condition.above !== null && !(value > num(condition.above))) return false;
+        if (condition.below !== undefined && condition.below !== null && !(value < num(condition.below))) return false;
+        return true;
+      }
+      case "screen": return !condition.media_query || !!window.matchMedia?.(condition.media_query).matches;
+      case "and": return conditionsMet(condition.conditions, hass);
+      case "or": return !Array.isArray(condition.conditions) || !condition.conditions.length || condition.conditions.some((c) => conditionMet(c, hass));
+      case "not": return !Array.isArray(condition.conditions) || !condition.conditions.some((c) => conditionMet(c, hass));
+      default: return true;
+    }
+  };
+  const conditionsMet = (conditions, hass) => !Array.isArray(conditions) || conditions.every((c) => conditionMet(c, hass));
 
   const STYLE = `
     dialog.ha-popup-opener { box-sizing: border-box; width: min(520px, 90vw); max-width: 90vw; max-height: 85vh; margin: auto; padding: 0;
@@ -175,7 +208,7 @@
           for (const section of view.sections ?? []) {
             const cards = section.cards ?? [];
             const index = cards.findIndex((card) => norm(heading(card)) === norm(sectionName));
-            if (index >= 0) return { title: heading(cards[index]), span: Number(section.column_span) || 1, cards: cards.filter((_, i) => i !== index) };
+            if (index >= 0) return { title: heading(cards[index]), span: Number(section.column_span) || 1, visibility: section.visibility, cards: cards.filter((_, i) => i !== index) };
           }
         }
         return null;
@@ -195,6 +228,8 @@
       }
       if (current !== popup) return;
       if (!found) { note(t("notFound") + " " + name); return; }
+      // Section visibility (for example only for certain users): not shown when the conditions are not met
+      if (!conditionsMet(found.visibility, getHass() ?? hass)) { title.textContent = ""; note(t("notVisible")); return; }
       const customTitle = String(cfg.popup_title ?? "").trim();
       title.textContent = customTitle || (cfg.hide_title ? "" : String(found.title ?? name));
 
@@ -251,6 +286,7 @@
         const next = getHass();
         if (!next || next === lastHass) return;
         lastHass = next;
+        if (!conditionsMet(found.visibility, next)) { try { dialog.close(); } catch { popup.finish(); } return; }
         popup.cards.forEach((card) => { card.hass = next; });
       }, 500);
     } catch (error) {
